@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudyBuddy Teacher Analytics Portal</title>
+  <!-- Google Fonts Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+  <!-- NAVIGATION HEADER -->
+  <header class="app-header">
+    <div class="header-logo">
+      <i data-lucide="users" class="logo-icon"></i>
+      <div>
+        <h1>StudyBuddy</h1>
+        <p class="logo-sub">Teacher Analytics Dashboard</p>
+      </div>
+    </div>
+    
+    <div class="server-config">
+      <div class="input-group">
+        <label for="apiUrl">Server API</label>
+        <input type="text" id="apiUrl" value="http://localhost:8000" placeholder="e.g. http://192.168.X.X:8000">
+      </div>
+      <div class="input-group">
+        <label for="classId">Classroom Code</label>
+        <input type="text" id="classId" value="class_sih2026" placeholder="class-join-code">
+      </div>
+      <button id="btnSync" class="btn-sync">
+        <i data-lucide="refresh-cw" class="btn-icon"></i>
+        Sync Portal
+      </button>
+    </div>
+  </header>
+
+  <main class="dashboard-content">
+    
+    <!-- STATS OVERVIEW SECTION -->
+    <section class="overview-grid">
+      <div class="overview-card">
+        <div class="card-icon-container purple">
+          <i data-lucide="book-open"></i>
+        </div>
+        <div class="card-details">
+          <p class="stat-label">Total Concepts Tracked</p>
+          <h3 id="statTotalConcepts">0</h3>
+        </div>
+      </div>
+      <div class="overview-card">
+        <div class="card-icon-container cyan">
+          <i data-lucide="award"></i>
+        </div>
+        <div class="card-details">
+          <p class="stat-label">Class-wide Mastery Average</p>
+          <h3 id="statMasteryAverage">0%</h3>
+        </div>
+      </div>
+      <div class="overview-card">
+        <div class="card-icon-container red">
+          <i data-lucide="alert-triangle"></i>
+        </div>
+        <div class="card-details">
+          <p class="stat-label">Struggling Topics</p>
+          <h3 id="statStrugglingConcepts">0</h3>
+        </div>
+      </div>
+    </section>
+
+    <!-- HEATMAP & LEADERBOARD MAIN PANEL -->
+    <div class="main-panel-grid">
+      
+      <!-- LEFT SECTION: CONCEPT HEATMAP -->
+      <section class="panel-card double-width">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <i data-lucide="grid" class="panel-icon"></i>
+            <h2>Concept Mastery Heat Map</h2>
+          </div>
+          <span class="legend-badge">Tap concept to inspect progress details</span>
+        </div>
+        
+        <!-- Legend Indicator -->
+        <div class="heatmap-legend">
+          <div class="legend-item"><span class="color-dot green"></span> Mastered (>=75%)</div>
+          <div class="legend-item"><span class="color-dot orange"></span> Progressing (50-75%)</div>
+          <div class="legend-item"><span class="color-dot red"></span> Struggling (<50%)</div>
+        </div>
+
+        <div id="heatmapGrid" class="heatmap-grid">
+          <!-- Concept cards generated here -->
+          <div class="placeholder-card">
+            <i data-lucide="sparkles" class="placeholder-icon"></i>
+            <p>Sync data to view classroom metrics</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT SECTION: LEADERBOARD -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <i data-lucide="trophy" class="panel-icon gold"></i>
+            <h2>Class Leaderboard</h2>
+          </div>
+        </div>
+        
+        <div id="leaderboardList" class="leaderboard-list">
+          <!-- Leaderboard rows generated here -->
+          <div class="placeholder-card mini">
+            <p>Leaderboard records will load on Sync.</p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- STUDENT BREAKDOWN EXPAND PANEL -->
+    <section class="panel-card breakdown-section">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <i data-lucide="clipboard-list" class="panel-icon text-cyan"></i>
+          <h2>Anonymized Student Progress Breakdown</h2>
+        </div>
+        <span id="selectedTopicTitle" class="badge-selected-topic">All Topics</span>
+      </div>
+
+      <div class="table-container">
+        <table class="progress-table">
+          <thead>
+            <tr>
+              <th>Student Alias</th>
+              <th>Mastery Score</th>
+              <th>Status Badge</th>
+            </tr>
+          </thead>
+          <tbody id="studentTableBody">
+            <tr>
+              <td colspan="3" class="table-empty">Sync data and click a concept card to view anonymized scores.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="privacy-footer">
+        <i data-lucide="shield-check" class="shield-icon"></i>
+        <span>Privacy Protection: Student identifiers and raw spoken inputs are anonymized at the API layer.</span>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- JS Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
