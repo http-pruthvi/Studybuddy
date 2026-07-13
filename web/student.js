@@ -8,7 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // DOM Elements
   const apiUrlInput = document.getElementById('apiUrl');
-  const userIdInput = document.getElementById('userId');
+  const usernameInput = document.getElementById('username');
+  const passwordInput = document.getElementById('password');
   const btnSync = document.getElementById('btnSync');
   const researchQueryInput = document.getElementById('researchQuery');
   const btnResearch = document.getElementById('btnResearch');
@@ -28,6 +29,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let hoveredNode = null;
   let isDragging = false;
   let draggedNode = null;
+  
+  let currentToken = "";
+  let currentUserId = "";
 
   // Event Listeners
   btnSync.addEventListener('click', syncDashboard);
@@ -37,14 +41,13 @@ document.addEventListener('DOMContentLoaded', () => {
   async function researchTopic() {
     const query = researchQueryInput.value.trim();
     const apiUrl = apiUrlInput.value.trim().replace(/\/$/, "");
-    const userId = userIdInput.value.trim();
 
     if (!query) {
       alert("Please enter a topic name to research.");
       return;
     }
-    if (!apiUrl || !userId) {
-      alert("Please ensure the Server API Target URL and Student ID are configured.");
+    if (!apiUrl || !currentUserId || !currentToken) {
+      alert("Please login first by clicking 'Sync Portal' with your credentials.");
       return;
     }
 
@@ -58,11 +61,11 @@ document.addEventListener('DOMContentLoaded', () => {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('@StudyBuddy:token') || ''}`
+          'Authorization': `Bearer ${currentToken}`
         },
         body: JSON.stringify({
           topic: query,
-          userId: userId,
+          userId: currentUserId,
           userName: "Web Student"
         })
       });
@@ -100,29 +103,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function syncDashboard() {
     const apiUrl = apiUrlInput.value.trim().replace(/\/$/, "");
-    const userId = userIdInput.value.trim();
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value.trim();
 
-    if (!apiUrl || !userId) {
-      alert("Please fill in both the Server API Target URL and the Student User ID.");
+    if (!apiUrl || !username || !password) {
+      alert("Please enter the Server API Target URL, Username, and Password.");
       return;
     }
 
     btnSync.disabled = true;
-    btnSync.innerHTML = '<i data-lucide="loader-2" class="btn-icon spinner"></i> Syncing...';
+    btnSync.innerHTML = '<i data-lucide="loader-2" class="btn-icon spinner"></i> Authenticating...';
     lucide.createIcons();
 
     try {
-      console.log(`Syncing data for Student: ${userId} from ${apiUrl}`);
+      console.log(`Authenticating user: ${username} on ${apiUrl}...`);
       
-      // 1. Fetch Student Graph
-      const graphResponse = await fetch(`${apiUrl}/users/${userId}/graph`);
+      // 1. Authenticate with backend and obtain JWT Token
+      const loginResponse = await fetch(`${apiUrl}/users/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      
+      if (!loginResponse.ok) {
+        throw new Error(`Authentication failed (status: ${loginResponse.status}). Make sure the user is registered.`);
+      }
+      
+      const loginResult = await loginResponse.json();
+      currentToken = loginResult.token;
+      currentUserId = loginResult.id;
+      
+      console.log(`Logged in successfully. User ID: ${currentUserId}`);
+      btnSync.innerHTML = '<i data-lucide="loader-2" class="btn-icon spinner"></i> Syncing Graph...';
+      lucide.createIcons();
+
+      // 2. Fetch Student Graph with Token
+      const graphResponse = await fetch(`${apiUrl}/users/${currentUserId}/graph`, {
+        headers: { 'Authorization': `Bearer ${currentToken}` }
+      });
       if (!graphResponse.ok) {
         throw new Error(`Failed to fetch student graph (status: ${graphResponse.status})`);
       }
       graphData = await graphResponse.json();
 
-      // 2. Fetch Review Queue
-      const queueResponse = await fetch(`${apiUrl}/users/${userId}/review-queue`);
+      // 3. Fetch Review Queue with Token
+      const queueResponse = await fetch(`${apiUrl}/users/${currentUserId}/review-queue`, {
+        headers: { 'Authorization': `Bearer ${currentToken}` }
+      });
       if (!queueResponse.ok) {
         throw new Error(`Failed to fetch review queue (status: ${queueResponse.status})`);
       }
