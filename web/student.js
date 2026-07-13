@@ -10,6 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const apiUrlInput = document.getElementById('apiUrl');
   const userIdInput = document.getElementById('userId');
   const btnSync = document.getElementById('btnSync');
+  const researchQueryInput = document.getElementById('researchQuery');
+  const btnResearch = document.getElementById('btnResearch');
   
   const queueTableBody = document.getElementById('queueTableBody');
   const canvas = document.getElementById('graphCanvas');
@@ -29,7 +31,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Event Listeners
   btnSync.addEventListener('click', syncDashboard);
+  btnResearch.addEventListener('click', researchTopic);
   btnDismissModal.addEventListener('click', () => reviseModal.style.display = 'none');
+
+  async function researchTopic() {
+    const query = researchQueryInput.value.trim();
+    const apiUrl = apiUrlInput.value.trim().replace(/\/$/, "");
+    const userId = userIdInput.value.trim();
+
+    if (!query) {
+      alert("Please enter a topic name to research.");
+      return;
+    }
+    if (!apiUrl || !userId) {
+      alert("Please ensure the Server API Target URL and Student ID are configured.");
+      return;
+    }
+
+    btnResearch.disabled = true;
+    btnResearch.innerHTML = '<i data-lucide="loader-2" class="btn-icon spinner"></i> Researching...';
+    lucide.createIcons();
+
+    try {
+      console.log(`Requesting topic learn for: "${query}"...`);
+      const response = await fetch(`${apiUrl}/topics/learn`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('@StudyBuddy:token') || ''}`
+        },
+        body: JSON.stringify({
+          topic: query,
+          userId: userId,
+          userName: "Web Student"
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to research topic (status: ${response.status})`);
+      }
+
+      alert(`Curriculum Generated! Researched "${query}" and merged concepts into your knowledge graph.`);
+      researchQueryInput.value = '';
+      syncDashboard(); // Reload graph!
+    } catch (e) {
+      console.error(e);
+      alert(`Research Failed: ${e.message}\n\nMake sure the backend server is online.`);
+    } finally {
+      btnResearch.disabled = false;
+      btnResearch.innerHTML = 'Research';
+      lucide.createIcons();
+    }
+  }
   
   // Set canvas bounds on resize
   window.addEventListener('resize', resizeCanvas);

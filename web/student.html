@@ -76,6 +76,18 @@
 
       <!-- RIGHT SECTION: ACTIVE RECALL REVIEW QUEUE (40%) -->
       <section class="panel-card" style="flex: 1;">
+        <!-- Research Topic Box -->
+        <div style="margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--border-color);">
+          <div class="panel-title-group" style="margin-bottom: 12px;">
+            <i data-lucide="search" class="panel-icon" style="color: var(--purple); width: 18px; height: 18px;"></i>
+            <h3 style="color: #fff; font-size: 14px; font-weight: 700;">Research New Topic</h3>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="researchQuery" placeholder="e.g. Quantum Computing, Black Holes" style="flex: 1; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border-color); background-color: var(--bg-input); color: #fff; font-size: 13px; outline: none; transition: border 0.3s;" onfocus="this.style.borderColor='var(--purple)'" onblur="this.style.borderColor='var(--border-color)'">
+            <button id="btnResearch" class="btn-sync" style="background-color: var(--purple); font-size: 12px; padding: 10px 16px; border-radius: 10px; height: auto;">Research</button>
+          </div>
+        </div>
+
         <div class="panel-header">
           <div class="panel-title-group">
             <i data-lucide="clock" class="panel-icon"></i>
