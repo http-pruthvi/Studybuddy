@@ -18,7 +18,6 @@ StudyBuddy is a state-of-the-art "explain it to learn it" educational technology
 ### Targeted Partner Tracks & SDK Implementations
 -   **Expo (20 Bonus Points)**: Core client application built using Expo SDK, utilizing `react-native-svg` for visual force-directed layouts and local persistence.
 -   **Neo4j AuraDB (20 Bonus Points)**: Used as the single source of truth for all graph relationships. Uses unique constraints and complex Cypher queries for prerequisite traversal, review queueing, and classroom masteries.
--   **Render Workflows (10 Bonus Points)**: Backend background execution pipelines are written using the `render-sdk` Python library, using durable decorators (`@app.task`) to run transcription, LLM concept extraction, and database uploads in stateful, independent retry steps.
 -   **Sarvam AI ($1000 API Credits)**: Multi-lingual voice processing powered by Sarvam Saaras v3 STT API, and concept/graph mapping generated using Sarvam's Chat Completions LLM endpoint.
 -   **Base44**: High-fidelity web dashboard prompts (in `docs/`) that let students and teachers inspect graphs and classroom heatmaps using simple natural language generation.
 
@@ -30,25 +29,18 @@ StudyBuddy is a state-of-the-art "explain it to learn it" educational technology
   +----------------------------------------------------------------+
   |                        Expo Mobile App                         |
   |   - Visual interactive SVG graph layout                        |
-  |   - Typed text explanation & Simulated voice recording        |
+  |   - Typed text explanation & Voice recording                   |
   |   - Flip flashcards & Active recall quiz grades                |
   +-------------------------------+--------------------------------+
                                   |
-                                  | HTTP REST API
+                                  | HTTP REST API (JWT Authenticated)
                                   v
   +----------------------------------------------------------------+
   |                        FastAPI Gateway                         |
   |   - Exposes REST routes (/decks/generate, /users/.../graph)    |
-  |   - Triggers background Render Workflows                       |
-  +-------------------------------+--------------------------------+
-                                  |
-                                  | Orchestrates Task Runner
-                                  v
-  +----------------------------------------------------------------+
-  |                  Render Workflows (Durable)                    |
-  |   - Step 1: Transcribe Audio (Sarvam Saaras v3 STT)            |
-  |   - Step 2: Extract Concepts & Cards (Sarvam Chat LLM)          |
-  |   - Step 3: Write Graph Nodes & Edges (Neo4j AuraDB)           |
+  |   - Transcribes Audio (Sarvam Saaras v3 STT)                   |
+  |   - Extracts Concepts & Cards (Sarvam Chat LLM / Gemini API)   |
+  |   - Writes Graph Nodes & Edges (Neo4j AuraDB)                  |
   +----------------------------------------------------------------+
 ```
 
@@ -89,14 +81,10 @@ pip install -r requirements.txt
 
 Start the FastAPI HTTP service:
 ```bash
+cd server
 python main.py
 ```
 *The server will start running at `http://localhost:8000`. You can inspect the Swagger interactive docs at `http://localhost:8000/docs`.*
-
-To run the Render Workflows task worker locally:
-```bash
-python workflows.py
-```
 
 ### 2. Running the Expo Client Application
 In the root directory, install dependencies:

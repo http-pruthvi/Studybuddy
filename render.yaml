@@ -16,19 +16,9 @@ services:
         sync: false
       - key: NEO4J_PASSWORD
         sync: false
-
-  # 2. Render Workflows Worker (Processes the durable background tasks)
-  - type: worker
-    name: studybuddy-workflows-worker
-    runtime: python
-    buildCommand: pip install -r server/requirements.txt
-    startCommand: python server/workflows.py
-    envVars:
-      - key: SARVAM_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
-      - key: NEO4J_URI
+      - key: JWT_SECRET
         sync: false
-      - key: NEO4J_USERNAME
-        sync: false
-      - key: NEO4J_PASSWORD
+      - key: ALLOWED_ORIGINS
         sync: false

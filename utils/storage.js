@@ -8,28 +8,30 @@ const MOOD_KEY = '@StudyBuddy:mood';
 // Helper to generate a random 4-char string
 const generateHash = () => Math.random().toString(36).substring(2, 6).toUpperCase();
 
+const TOKEN_KEY = '@StudyBuddy:token';
+
 /**
- * Initializes user profile locally with a persistent UUID and screen name.
+ * Saves the session JWT token locally.
  */
-export const initUser = async () => {
+export const saveToken = async (token) => {
   try {
-    const existing = await AsyncStorage.getItem(USER_KEY);
-    if (existing) {
-      return JSON.parse(existing);
-    }
-    
-    // Generate new user details
-    const newUser = {
-      id: `usr_${generateHash()}_${Date.now().toString().slice(-4)}`,
-      name: `Learner ${generateHash()}`,
-      streak: 0
-    };
-    
-    await AsyncStorage.setItem(USER_KEY, JSON.stringify(newUser));
-    return newUser;
+    await AsyncStorage.setItem(TOKEN_KEY, token);
+    return token;
   } catch (err) {
-    console.error('Error initializing user:', err);
-    throw err;
+    console.error('Error saving token:', err);
+    return null;
+  }
+};
+
+/**
+ * Retrieves the session JWT token.
+ */
+export const getToken = async () => {
+  try {
+    return await AsyncStorage.getItem(TOKEN_KEY);
+  } catch (err) {
+    console.error('Error fetching token:', err);
+    return null;
   }
 };
 
@@ -65,6 +67,7 @@ export const saveUser = async (user) => {
 export const logoutUser = async () => {
   try {
     await AsyncStorage.removeItem(USER_KEY);
+    await AsyncStorage.removeItem(TOKEN_KEY);
     await AsyncStorage.removeItem(DECKS_KEY);
     await AsyncStorage.removeItem(CLASSROOM_KEY);
     await AsyncStorage.removeItem(MOOD_KEY);

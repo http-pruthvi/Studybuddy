@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useContext } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -15,6 +15,7 @@ import {
 import { Mic, GitBranch, Flame, Sparkles, Award, ArrowRight, User } from 'lucide-react-native';
 import { saveUser } from '../utils/storage';
 import { registerUser, loginUser } from '../utils/workflowClient';
+import { AuthContext } from '../App';
 
 const { width, height } = Dimensions.get('window');
 
@@ -43,6 +44,7 @@ const slides = [
 ];
 
 export default function OnboardingScreen({ route, navigation }) {
+  const { login } = useContext(AuthContext);
   const [activeSlide, setActiveSlide] = useState(0);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
@@ -95,12 +97,7 @@ export default function OnboardingScreen({ route, navigation }) {
         theme: themeColor
       };
       await saveUser(newUser);
-      
-      if (route.params?.onComplete) {
-        route.params.onComplete(newUser);
-      } else {
-        navigation.replace('Home');
-      }
+      login(newUser);
     } catch (err) {
       Alert.alert("Registration Error", err.message);
     } finally {
@@ -132,12 +129,7 @@ export default function OnboardingScreen({ route, navigation }) {
         theme: themeColor
       };
       await saveUser(user);
-      
-      if (route.params?.onComplete) {
-        route.params.onComplete(user);
-      } else {
-        navigation.replace('Home');
-      }
+      login(user);
     } catch (err) {
       Alert.alert("Login Error", err.message);
     } finally {

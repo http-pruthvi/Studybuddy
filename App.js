@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, createContext } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View } from 'react-native';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
@@ -17,6 +17,7 @@ import LeaderboardScreen from './screens/LeaderboardScreen';
 import { getUser } from './utils/storage';
 
 const Stack = createStackNavigator();
+export const AuthContext = createContext();
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -37,73 +38,81 @@ export default function App() {
     setupUser();
   }, []);
 
+  const login = (userData) => {
+    setUser(userData);
+  };
+
+  const logout = () => {
+    setUser(null);
+  };
+
   if (initializing) {
     return <View style={{ flex: 1, backgroundColor: '#07080f' }} />;
   }
 
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
-      <NavigationContainer theme={CustomDarkTheme}>
-        <Stack.Navigator
-          screenOptions={{
-            headerStyle: {
-              backgroundColor: '#0c0f1d',
-              elevation: 0,
-              shadowOpacity: 0,
-              borderBottomWidth: 1,
-              borderBottomColor: '#202945',
-            },
-            headerTintColor: '#ffffff',
-            headerTitleStyle: {
-              fontWeight: '700',
-              fontSize: 18,
-              letterSpacing: 0.5,
-            },
-            headerBackTitleVisible: false,
-            cardStyle: { backgroundColor: '#07080f' },
-          }}
-        >
-          {user === null ? (
-            <Stack.Screen 
-              name="Onboarding" 
-              component={OnboardingScreen} 
-              options={{ headerShown: false }}
-              initialParams={{ onComplete: (u) => setUser(u) }}
-            />
-          ) : (
-            <>
+    <AuthContext.Provider value={{ user, login, logout }}>
+      <View style={styles.container}>
+        <StatusBar style="light" />
+        <NavigationContainer theme={CustomDarkTheme}>
+          <Stack.Navigator
+            screenOptions={{
+              headerStyle: {
+                backgroundColor: '#0c0f1d',
+                elevation: 0,
+                shadowOpacity: 0,
+                borderBottomWidth: 1,
+                borderBottomColor: '#202945',
+              },
+              headerTintColor: '#ffffff',
+              headerTitleStyle: {
+                fontWeight: '700',
+                fontSize: 18,
+                letterSpacing: 0.5,
+              },
+              headerBackTitleVisible: false,
+              cardStyle: { backgroundColor: '#07080f' },
+            }}
+          >
+            {user === null ? (
               <Stack.Screen 
-                name="Home" 
-                component={HomeScreen} 
-                options={{ title: 'StudyBuddy Graph' }}
-                initialParams={{ onLogout: () => setUser(null) }}
+                name="Onboarding" 
+                component={OnboardingScreen} 
+                options={{ headerShown: false }}
               />
-              <Stack.Screen 
-                name="Capture" 
-                component={CaptureScreen} 
-                options={{ title: 'Explain to Learn' }}
-              />
-              <Stack.Screen 
-                name="Flashcards" 
-                component={FlashcardsScreen} 
-                options={{ title: 'Flashcards' }}
-              />
-              <Stack.Screen 
-                name="Quiz" 
-                component={QuizScreen} 
-                options={{ title: 'Active Recall Quiz' }}
-              />
-              <Stack.Screen 
-                name="Leaderboard" 
-                component={LeaderboardScreen} 
-                options={{ title: 'Classroom Leaderboard' }}
-              />
-            </>
-          )}
-        </Stack.Navigator>
-      </NavigationContainer>
-    </View>
+            ) : (
+              <>
+                <Stack.Screen 
+                  name="Home" 
+                  component={HomeScreen} 
+                  options={{ title: 'StudyBuddy Graph' }}
+                />
+                <Stack.Screen 
+                  name="Capture" 
+                  component={CaptureScreen} 
+                  options={{ title: 'Explain to Learn' }}
+                />
+                <Stack.Screen 
+                  name="Flashcards" 
+                  component={FlashcardsScreen} 
+                  options={{ title: 'Flashcards' }}
+                />
+                <Stack.Screen 
+                  name="Quiz" 
+                  component={QuizScreen} 
+                  options={{ title: 'Active Recall Quiz' }}
+                />
+                <Stack.Screen 
+                  name="Leaderboard" 
+                  component={LeaderboardScreen} 
+                  options={{ title: 'Classroom Leaderboard' }}
+                />
+              </>
+            )}
+          </Stack.Navigator>
+        </NavigationContainer>
+      </View>
+    </AuthContext.Provider>
   );
 }
 

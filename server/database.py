@@ -1,7 +1,8 @@
 import os
 import uuid
-import hashlib
-from datetime import datetime
+import bcrypt
+import jwt
+from datetime import datetime, timedelta, timezone
 from neo4j import GraphDatabase, basic_auth
 from dotenv import load_dotenv
 
@@ -18,7 +19,7 @@ def init_driver():
     global _driver
     if _driver is None:
         try:
-            print(f"Connecting to Neo4j at {NEO4J_URI} using username '{NEO4J_USERNAME}' and password '{NEO4J_PASSWORD[:4]}...{NEO4J_PASSWORD[-4:]}'")
+            print(f"Connecting to Neo4j at {NEO4J_URI} using username '{NEO4J_USERNAME}'")
             _driver = GraphDatabase.driver(
                 NEO4J_URI, 
                 auth=basic_auth(NEO4J_USERNAME, NEO4J_PASSWORD)
@@ -160,7 +161,9 @@ def write_deck_and_graph(user_id, user_name, deck_title, concepts, cards, classr
                         ON CREATE SET t1.id = $t1_uuid
                         MERGE (t2:Topic {canonicalName: $rel_canonical})
                         ON CREATE SET t2.id = $t2_uuid
-                        MERGE (t1)-[:RELATES_TO]->(t2)
+                        MERGE (t1)-[r:RELATES_TO]->(t2)
+                        ON CREATE SET r.weight = 1
+                        ON MATCH SET r.weight = r.weight + 1
                         """,
                         canonical=canonical,
                         t1_uuid=str(uuid.uuid4()),
@@ -177,7 +180,9 @@ def write_deck_and_graph(user_id, user_name, deck_title, concepts, cards, classr
                         ON CREATE SET t1.id = $t1_uuid
                         MERGE (t2:Topic {canonicalName: $prereq_canonical})
                         ON CREATE SET t2.id = $t2_uuid
-                        MERGE (t1)-[:PREREQUISITE_OF]->(t2)
+                        MERGE (t1)-[r:PREREQUISITE_OF]->(t2)
+                        ON CREATE SET r.weight = 1
+                        ON MATCH SET r.weight = r.weight + 1
                         """,
                         canonical=canonical,
                         t1_uuid=str(uuid.uuid4()),
@@ -228,7 +233,7 @@ def get_user_graph(user_id):
             WHERE t1.canonicalName IN $node_names AND t2.canonicalName IN $node_names
             RETURN DISTINCT t1.id as sourceId, t1.canonicalName as sourceName, 
                             t2.id as targetId, t2.canonicalName as targetName, 
-                            type(r) as type
+                            type(r) as type, r.weight as weight
             """,
             node_names=list(node_names)
         )
@@ -237,7 +242,8 @@ def get_user_graph(user_id):
             edges.append({
                 "source": record["sourceId"] or record["sourceName"],
                 "target": record["targetId"] or record["targetName"],
-                "type": record["type"]
+                "type": record["type"],
+                "weight": record["weight"] or 1
             })
             
         return {"nodes": nodes, "edges": edges}
@@ -251,8 +257,12 @@ def get_review_queue(user_id):
         result = session.run(
             """
             MATCH (u:User {id: $user_id})-[l:LEARNED]->(t:Topic)
-            RETURN t.id as id, t.canonicalName as name, l.score as score, l.lastReviewed as lastReviewed
-            ORDER BY l.lastReviewed ASC
+            WHERE l.nextReviewDate IS NULL OR l.nextReviewDate <= date()
+            RETURN t.id as id, t.canonicalName as name, l.score as score, 
+                   l.lastReviewed as lastReviewed, l.nextReviewDate as nextReviewDate,
+                   l.interval as interval
+            ORDER BY CASE WHEN l.nextReviewDate IS NULL THEN 0 
+                          ELSE duration.between(l.nextReviewDate, date()).days END DESC
             """,
             user_id=user_id
         )
@@ -261,14 +271,44 @@ def get_review_queue(user_id):
                 "id": r["id"] or r["name"],
                 "name": r["name"],
                 "score": r["score"],
-                "lastReviewed": r["lastReviewed"]
+                "lastReviewed": r["lastReviewed"],
+                "nextReviewDate": str(r["nextReviewDate"]) if r["nextReviewDate"] else None,
+                "interval": r["interval"] or 1
             }
             for r in result
         ]
 
+JWT_SECRET = os.getenv("JWT_SECRET", "super-secret-key-studybuddy-sih-2026")
+JWT_ALGORITHM = "HS256"
+
+def generate_token(user_id: str) -> str:
+    """Generates a signed JWT token valid for 30 days."""
+    payload = {
+        "sub": user_id,
+        "exp": datetime.now(timezone.utc) + timedelta(days=30)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def decode_token(token: str) -> str:
+    """Decodes and verifies a JWT token, returning the user_id (subject)."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload["sub"]
+    except Exception:
+        return None
+
 def hash_password(password: str) -> str:
-    """Computes SHA-256 hash of password for secure storage."""
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+    """Hashes a password using bcrypt with a proper salt."""
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    """Verifies a password against its bcrypt hash."""
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception:
+        return False
 
 def create_user_account(username, password, name):
     """Registers a unique user profile in Neo4j with hashed credentials."""
@@ -312,7 +352,6 @@ def login_user_account(username, password):
     if not driver:
         raise Exception("Database connection offline")
         
-    pwd_hash = hash_password(password)
     username_clean = username.strip().lower()
     
     with driver.session() as session:
@@ -327,7 +366,8 @@ def login_user_account(username, password):
         if not result:
             raise Exception("Account username not found")
             
-        if result["passwordHash"] != pwd_hash:
+        stored_hash = result["passwordHash"]
+        if not stored_hash or not verify_password(password, stored_hash):
             raise Exception("Invalid username or password")
             
         return {
@@ -345,11 +385,13 @@ def get_next_to_learn(user_id):
     with driver.session() as session:
         result = session.run(
             """
-            MATCH (u:User {id: $user_id})-[l:LEARNED]->(t1:Topic)
-            WHERE l.score >= 0.7
-            MATCH (t1)-[:PREREQUISITE_OF]->(t2:Topic)
+            MATCH (u:User {id: $user_id})
+            MATCH (t2:Topic)
             WHERE NOT (u)-[:LEARNED]->(t2)
-            RETURN DISTINCT t2.id as id, t2.canonicalName as name
+            WITH u, t2, [(t1)-[:PREREQUISITE_OF]->(t2) | t1] AS prereqs
+            WHERE size(prereqs) > 0
+              AND all(p IN prereqs WHERE EXISTS { MATCH (u)-[l:LEARNED]->(p) WHERE l.score >= 0.7 })
+            RETURN DISTINCT t2.id AS id, t2.canonicalName AS name
             LIMIT 5
             """,
             user_id=user_id
@@ -367,29 +409,130 @@ def update_mastery(user_id, topic_id, score):
     if not driver:
         return {"status": "offline_mode_success"}
         
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    # SM-2 algorithm: map 0.0-1.0 score to SM-2 quality (0-5)
+    quality = round(score * 5)  # 0.0->0, 0.2->1, 0.4->2, 0.6->3, 0.8->4, 1.0->5
+    
     with driver.session() as session:
         # Match topic by id OR canonicalName
         session.run(
             """
             MERGE (u:User {id: $user_id})
-            ON CREATE SET u.streak = 0
+            ON CREATE SET u.streak = 0, u.lastSessionDate = $today
             
+            WITH u
             MATCH (t:Topic)
             WHERE t.id = $topic_id OR t.canonicalName = $topic_id
             
             MERGE (u)-[l:LEARNED]->(t)
-            SET l.score = $score, l.lastReviewed = $now
+            ON CREATE SET l.interval = 1, l.easeFactor = 2.5, l.score = $score, l.lastReviewed = $now
             
             WITH u, l
-            SET u.streak = CASE WHEN $score >= 0.7 THEN u.streak + 1 ELSE 0 END
+            
+            // SM-2: Update ease factor
+            SET l.easeFactor = CASE 
+                WHEN l.easeFactor + (0.1 - (5 - $quality) * (0.08 + (5 - $quality) * 0.02)) < 1.3 THEN 1.3
+                ELSE l.easeFactor + (0.1 - (5 - $quality) * (0.08 + (5 - $quality) * 0.02))
+            END
+            
+            // SM-2: Update interval
+            SET l.interval = CASE
+                WHEN $quality < 3 THEN 1
+                WHEN l.interval IS NULL OR l.interval <= 1 THEN 1
+                WHEN l.interval = 1 THEN 6
+                ELSE toInteger(l.interval * l.easeFactor)
+            END
+            
+            SET l.score = $score, l.lastReviewed = $now
+            SET l.nextReviewDate = date() + duration({days: l.interval})
+            
+            // Streak: consecutive-day tracking (not per-answer)
+            WITH u
+            SET u.streak = CASE
+                WHEN u.lastSessionDate IS NULL THEN 1
+                WHEN u.lastSessionDate = $today THEN u.streak
+                WHEN u.lastSessionDate = date($today) - duration({days: 1}) THEN u.streak + 1
+                ELSE 1
+            END,
+            u.lastSessionDate = $today
             """,
             user_id=user_id,
             topic_id=topic_id,
             score=score,
-            now=now
+            quality=quality,
+            now=now,
+            today=today
         )
         return {"status": "success", "topicId": topic_id, "score": score}
+
+def update_mastery_batch(user_id, updates):
+    """Batch update mastery scores for multiple topics using UNWIND."""
+    driver = get_driver()
+    if not driver:
+        return {"status": "offline_mode_success"}
+    
+    now = datetime.now(timezone.utc).isoformat()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    # Prepare updates with SM-2 quality values
+    enriched = []
+    for u in updates:
+        score = u.get("score", 0.5)
+        quality = round(score * 5)
+        enriched.append({
+            "topicId": u["topicId"],
+            "score": score,
+            "quality": quality
+        })
+    
+    with driver.session() as session:
+        session.run(
+            """
+            MERGE (user:User {id: $user_id})
+            ON CREATE SET user.streak = 0, user.lastSessionDate = $today
+            
+            WITH user
+            UNWIND $updates AS upd
+            
+            MATCH (t:Topic)
+            WHERE t.id = upd.topicId OR t.canonicalName = upd.topicId
+            
+            MERGE (user)-[l:LEARNED]->(t)
+            ON CREATE SET l.interval = 1, l.easeFactor = 2.5
+            
+            SET l.easeFactor = CASE 
+                WHEN l.easeFactor + (0.1 - (5 - upd.quality) * (0.08 + (5 - upd.quality) * 0.02)) < 1.3 THEN 1.3
+                ELSE l.easeFactor + (0.1 - (5 - upd.quality) * (0.08 + (5 - upd.quality) * 0.02))
+            END
+            
+            SET l.interval = CASE
+                WHEN upd.quality < 3 THEN 1
+                WHEN l.interval IS NULL OR l.interval <= 1 THEN 1
+                WHEN l.interval = 1 THEN 6
+                ELSE toInteger(l.interval * l.easeFactor)
+            END
+            
+            SET l.score = upd.score, l.lastReviewed = $now
+            SET l.nextReviewDate = date() + duration({days: l.interval})
+            
+            WITH user
+            LIMIT 1
+            SET user.streak = CASE
+                WHEN user.lastSessionDate IS NULL THEN 1
+                WHEN user.lastSessionDate = $today THEN user.streak
+                WHEN user.lastSessionDate = date($today) - duration({days: 1}) THEN user.streak + 1
+                ELSE 1
+            END,
+            user.lastSessionDate = $today
+            """,
+            user_id=user_id,
+            updates=enriched,
+            now=now,
+            today=today
+        )
+        return {"status": "success", "count": len(updates)}
 
 def get_classroom_heatmap(classroom_id):
     driver = get_driver()
