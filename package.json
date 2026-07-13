@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
+    "prestart": "git add web/ netlify.toml && (git commit -m \"chore: auto-deploy web portal updates to Netlify\" || echo \"No web changes to commit\") && git push",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
