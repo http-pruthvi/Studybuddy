@@ -527,3 +527,28 @@ body {
   height: 16px;
   color: var(--green);
 }
+
+/* 6. Navigation Link Switcher */
+.portal-switch {
+  background: transparent;
+  border: 1px solid var(--purple);
+  color: var(--purple);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+  margin-right: 12px;
+}
+
+.portal-switch:hover {
+  background: var(--purple);
+  color: #fff;
+  box-shadow: 0 0 10px var(--purple-glow);
+}
+
