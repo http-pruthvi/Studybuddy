@@ -1,0 +1,9 @@
+[build]
+  # Set the base directory to 'web' so Netlify ignores the root Expo package.json dependency tree
+  base = "web"
+  
+  # Publish the current base directory (web) directly as the static output
+  publish = "."
+
+  # No build commands needed for raw static HTML/CSS/JS
+  command = "echo 'Static deploy successful.'"
