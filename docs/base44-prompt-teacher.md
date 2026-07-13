@@ -40,5 +40,5 @@ Build a responsive classroom learning analytics dashboard for teachers with a cl
    - Card Backgrounds: #0c0f1d with thin border #202945
    - Table headers: #111424
    - Accent colors: Violet (#7c4dff), Cyan (#00e5ff)
-   - Ensure clear labels explaining that all student metrics are compiled locally on device and synced anonymously.
+   - Ensure clear labels explaining that student progress is stored server-side and only anonymized aliases are exposed to this dashboard.
 ```

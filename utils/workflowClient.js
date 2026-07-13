@@ -202,9 +202,9 @@ const getLocalHeuristicFallback = (text, languageCode) => {
  * Triggers the remote deck generation workflow.
  * Falls back to offline heuristic client-side deck generation on error/timeout.
  */
-export const generateDeck = async (userId, userName, text, audioBase64, languageCode, classroomId) => {
+export const generateDeck = async (userId, userName, text, audioBase64, languageCode, classroomId, commit = true) => {
   const baseUrl = await getApiUrl();
-  console.log(`Sending generate request to: ${baseUrl}/decks/generate`);
+  console.log(`Sending generate request to: ${baseUrl}/decks/generate, commit=${commit}`);
   
   try {
     const response = await fetch(`${baseUrl}/decks/generate`, {
@@ -217,25 +217,58 @@ export const generateDeck = async (userId, userName, text, audioBase64, language
         userId,
         userName,
         classroomId,
+        commit,
       }),
     });
     
     if (response.ok) {
       const data = await response.json();
-      await saveDeck(data);
+      if (commit) {
+        await saveDeck(data);
+      }
       return { data, isFallback: false };
     } else {
       const errText = await response.text();
       console.warn(`Server deck generation failed: ${errText}. Triggering offline fallback.`);
       const fallback = getLocalHeuristicFallback(text || "General study", languageCode);
-      await saveDeck(fallback);
+      if (commit) {
+        await saveDeck(fallback);
+      }
       return { data: fallback, isFallback: true };
     }
   } catch (err) {
     console.warn(`Fetch error during generation: ${err.message}. Triggering offline fallback.`);
     const fallback = getLocalHeuristicFallback(text || "General study", languageCode);
-    await saveDeck(fallback);
+    if (commit) {
+      await saveDeck(fallback);
+    }
     return { data: fallback, isFallback: true };
+  }
+};
+
+/**
+ * Commits a pre-extracted deck configuration to the graph.
+ */
+export const commitDeck = async (userId, userName, deckTitle, concepts, cards, classroomId) => {
+  const baseUrl = await getApiUrl();
+  const response = await fetch(`${baseUrl}/decks/commit`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({
+      userId,
+      userName,
+      deckTitle,
+      concepts,
+      cards,
+      classroomId,
+    }),
+  });
+  if (response.ok) {
+    const data = await response.json();
+    await saveDeck(data);
+    return data;
+  } else {
+    throw new Error(`Failed to commit deck to database`);
   }
 };
 
@@ -424,3 +457,38 @@ export const loginUser = async (username, password) => {
     throw new Error(detail);
   }
 };
+
+/**
+ * Grade student's free-text response against the flashcard answer.
+ */
+export const gradeAnswer = async (question, correctAnswer, studentAnswer) => {
+  const baseUrl = await getApiUrl();
+  const response = await fetch(`${baseUrl}/grade`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({ question, correctAnswer, studentAnswer }),
+  });
+  if (response.ok) {
+    return await response.json();
+  } else {
+    throw new Error(`Failed to grade answer on server`);
+  }
+};
+
+/**
+ * Batch updates mastery scores for multiple topics.
+ */
+export const updateMasteryBatch = async (userId, updates) => {
+  const baseUrl = await getApiUrl();
+  const response = await fetch(`${baseUrl}/users/${userId}/mastery/batch`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({ updates }),
+  });
+  if (response.ok) {
+    return await response.json();
+  } else {
+    throw new Error(`Failed to update masteries in batch`);
+  }
+};
+

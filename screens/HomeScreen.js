@@ -340,6 +340,12 @@ export default function HomeScreen({ route, navigation }) {
                   if (!sourcePos || !targetPos) return null;
                   
                   const isPrereq = edge.type === 'PREREQUISITE_OF';
+                  const weight = edge.weight || 1;
+                  const baseWidth = isPrereq ? 2.0 : 1.2;
+                  const strokeWidth = baseWidth + Math.min(3.0, (weight - 1) * 0.8);
+                  const baseOpacity = isPrereq ? 0.6 : 0.4;
+                  const opacity = Math.min(1.0, baseOpacity + (weight - 1) * 0.15);
+                  
                   return (
                     <Line
                       key={`edge-${index}`}
@@ -348,9 +354,9 @@ export default function HomeScreen({ route, navigation }) {
                       x2={targetPos.x}
                       y2={targetPos.y}
                       stroke={isPrereq ? '#7c4dff' : '#00e5ff'}
-                      strokeWidth={isPrereq ? 2 : 1.2}
+                      strokeWidth={strokeWidth}
                       strokeDasharray={isPrereq ? "4,4" : "0"}
-                      opacity={0.6}
+                      opacity={opacity}
                     />
                   );
                 })}

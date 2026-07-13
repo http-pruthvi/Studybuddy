@@ -14,7 +14,7 @@ import {
 import { Mic, Square, Check, ArrowRight, Languages } from 'lucide-react-native';
 
 import { getUser, getClassroom } from '../utils/storage';
-import { generateDeck, autoLearnTopic } from '../utils/workflowClient';
+import { generateDeck, autoLearnTopic, commitDeck } from '../utils/workflowClient';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 
@@ -110,9 +110,8 @@ export default function CaptureScreen({ navigation }) {
       });
       
       setAudioBase64(base64Data);
-      setText("Audio recorded successfully. Click generate to transcribe and build your graph.");
       setRecording(null);
-      Alert.alert("Audio Recorded!", "Audio explanation captured. Click the generate button below to parse.");
+      Alert.alert("Audio Captured!", "Voice explanation attached. You can now type an optional addendum/clarification details below before generating.");
     } catch (err) {
       console.error('Failed to stop recording', err);
       Alert.alert("Recording Error", "Failed to stop recording or retrieve file.");
@@ -120,7 +119,7 @@ export default function CaptureScreen({ navigation }) {
   };
 
   const handleGenerate = async () => {
-    if (!text.trim()) {
+    if (!text.trim() && !audioBase64) {
       Alert.alert("Input Required", "Please type or speak an explanation before generating a deck.");
       return;
     }
@@ -133,33 +132,92 @@ export default function CaptureScreen({ navigation }) {
       const classroomId = await getClassroom();
       
       setTimeout(() => setLoadingMessage('Sarvam AI extracting key concepts...'), 1000);
-      setTimeout(() => setLoadingMessage('Building Topic Node relationships...'), 2500);
-      setTimeout(() => setLoadingMessage('Upserting Neo4j AuraDB graph models...'), 4000);
+      setTimeout(() => setLoadingMessage('Analyzing explanation clarity & structure...'), 2500);
+      setTimeout(() => setLoadingMessage('Generating flashcards...'), 4000);
 
+      // Call generate with commit=false so we can review feedback before saving to graph
       const response = await generateDeck(
         user.id,
         user.name,
         text,
-        audioBase64, // Real Base64 audio string recorded by the user
+        audioBase64, 
         language,
-        classroomId
+        classroomId,
+        false // Do not commit automatically
       );
 
       setLoading(false);
       
       if (response.data) {
-        Alert.alert(
-          "Knowledge Generated!",
-          response.isFallback 
-            ? "Server is currently offline. Loaded using local heuristic fallback."
-            : "Successfully merged concepts into your personal Knowledge Graph!",
-          [
-            { 
-              text: "View Flashcards", 
-              onPress: () => navigation.replace('Flashcards', { deck: response.data })
-            }
-          ]
-        );
+        const result = response.data;
+        const score = result.clarityScore !== undefined ? result.clarityScore : 1.0;
+        const gaps = result.gaps || [];
+
+        if (score < 0.5 && gaps.length > 0) {
+          // Alert user of low clarity / gaps
+          Alert.alert(
+            "Gaps Detected!",
+            `Your explanation might be missing: ${gaps.join(', ')}.\n\nClarity Score: ${(score * 100).toFixed(0)}%\n\nDo you want to edit your explanation to add these details, or commit this deck anyway?`,
+            [
+              {
+                text: "Edit Explanation",
+                style: "cancel",
+                onPress: () => {
+                  // Copy combined transcription/text into the box and clear attached audio so they build upon it
+                  setText(result.text || text);
+                  setAudioBase64(null);
+                }
+              },
+              {
+                text: "Commit Anyway",
+                onPress: async () => {
+                  setLoading(true);
+                  setLoadingMessage('Upserting Neo4j AuraDB graph models...');
+                  try {
+                    const dbDeck = await commitDeck(
+                      user.id,
+                      user.name,
+                      result.title || "Study Deck",
+                      result.concepts,
+                      result.cards,
+                      classroomId
+                    );
+                    setLoading(false);
+                    navigation.replace('Flashcards', { deck: dbDeck });
+                  } catch (commitErr) {
+                    setLoading(false);
+                    Alert.alert("Commit Failed", commitErr.message);
+                  }
+                }
+              }
+            ]
+          );
+        } else {
+          // High clarity score, save automatically
+          setLoading(true);
+          setLoadingMessage('Upserting Neo4j AuraDB graph models...');
+          const dbDeck = await commitDeck(
+            user.id,
+            user.name,
+            result.title || "Study Deck",
+            result.concepts,
+            result.cards,
+            classroomId
+          );
+          setLoading(false);
+          Alert.alert(
+            "Knowledge Generated!",
+            response.isFallback 
+              ? "Loaded using local heuristic fallback."
+              : "Successfully merged concepts into your personal Knowledge Graph!",
+            [
+              { 
+                text: "View Flashcards", 
+                onPress: () => navigation.replace('Flashcards', { deck: dbDeck })
+              }
+            ]
+          );
+        }
       } else {
         Alert.alert("Error", "Workflow failed to produce a valid study deck.");
       }
@@ -193,8 +251,10 @@ export default function CaptureScreen({ navigation }) {
       
       if (response.data) {
         Alert.alert(
-          "Topic Loaded!",
-          "Gemini has successfully gathered the concept map details and created the study deck!",
+          "Research Completed!",
+          response.isFallback
+            ? "Offline fallback stub curriculum generated."
+            : `Successfully researched "${autoGatherQuery}" and integrated it into your graph!`,
           [
             { 
               text: "View Flashcards", 
@@ -203,48 +263,52 @@ export default function CaptureScreen({ navigation }) {
           ]
         );
       } else {
-        Alert.alert("Error", "Gemini failed to generate a valid study deck.");
+        Alert.alert("Error", "Topic research failed.");
       }
     } catch (err) {
       setLoading(false);
-      Alert.alert("Auto-Learn Failed", err.message);
+      Alert.alert("Research Failed", err.message);
     }
   };
 
   return (
     <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         
-        {/* MODE SELECTOR */}
+        {/* CAPTURE MODE TAB SWITCHER */}
         <View style={styles.modeContainer}>
           <TouchableOpacity 
-            style={[styles.modeTab, captureMode === 'explain' && styles.modeTabActive]} 
+            style={[styles.modeTab, captureMode === 'explain' && styles.modeTabActive]}
             onPress={() => setCaptureMode('explain')}
           >
-            <Text style={[styles.modeTabText, captureMode === 'explain' && styles.modeTabTextActive]}>Self Explanation</Text>
+            <Text style={[styles.modeTabText, captureMode === 'explain' && styles.modeTabTextActive]}>
+              🗣️ Explain Concept
+            </Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity 
-            style={[styles.modeTab, captureMode === 'auto_gather' && styles.modeTabActive]} 
+            style={[styles.modeTab, captureMode === 'auto_gather' && styles.modeTabActive]}
             onPress={() => setCaptureMode('auto_gather')}
           >
-            <Text style={[styles.modeTabText, captureMode === 'auto_gather' && styles.modeTabTextActive]}>Auto-Gather (Gemini)</Text>
+            <Text style={[styles.modeTabText, captureMode === 'auto_gather' && styles.modeTabTextActive]}>
+              🔍 Research Topic
+            </Text>
           </TouchableOpacity>
         </View>
 
         {captureMode === 'explain' ? (
           <>
-            {/* LANGUAGE SELECTOR */}
+            {/* LANGUAGE SELECTION CHIPS */}
             <View style={styles.section}>
-              <Text style={styles.label}>Select Study Language</Text>
+              <Text style={styles.label}>Select Explanation Language</Text>
               <View style={styles.languageContainer}>
                 {[
-                  { code: 'en-IN', name: 'English' },
-                  { code: 'hi-IN', name: 'हिन्दी (Hindi)' },
-                  { code: 'ta-IN', name: 'தமிழ் (Tamil)' }
+                  { code: 'en-IN', name: 'English (IN)' },
+                  { code: 'hi-IN', name: 'Hindi (हिंदी)' },
+                  { code: 'ta-IN', name: 'Tamil (தமிழ்)' }
                 ].map((lang) => (
                   <TouchableOpacity
                     key={lang.code}
@@ -286,7 +350,7 @@ export default function CaptureScreen({ navigation }) {
                     <TouchableOpacity style={styles.recordButtonStop} onPress={handleStopRecording}>
                       <Square color="#ffffff" size={24} fill="#ffffff" />
                     </TouchableOpacity>
-                    <Text style={styles.voiceSub}>Tap square to stop and transcribe</Text>
+                    <Text style={styles.voiceSub}>Tap square to stop and attach</Text>
                   </View>
                 ) : (
                   <View style={styles.idleInterface}>
@@ -302,7 +366,17 @@ export default function CaptureScreen({ navigation }) {
 
             {/* TYPED INPUT FORM */}
             <View style={styles.section}>
-              <Text style={styles.label}>Or Type Explanation Details</Text>
+              <Text style={styles.label}>Or Type/Add Explanation Details</Text>
+              
+              {audioBase64 && (
+                <View style={styles.audioAttachedBanner}>
+                  <Text style={styles.audioAttachedText}>🎙️ Voice explanation attached. You can type an addendum/details below.</Text>
+                  <TouchableOpacity onPress={() => setAudioBase64(null)} style={styles.removeAudioButton}>
+                    <Text style={styles.clearAudioText}>Remove Voice</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               <TextInput
                 style={styles.textInput}
                 multiline
@@ -486,6 +560,34 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
+  },
+  audioAttachedBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderColor: '#0284c7',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+  },
+  audioAttachedText: {
+    color: '#38bdf8',
+    fontSize: 11,
+    flex: 1,
+    marginRight: 8,
+  },
+  removeAudioButton: {
+    backgroundColor: '#1e293b',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  clearAudioText: {
+    color: '#f44336',
+    fontSize: 10,
+    fontWeight: '700',
   },
   textInput: {
     backgroundColor: '#0c0f1d',

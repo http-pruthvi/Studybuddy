@@ -11,7 +11,7 @@ StudyBuddy is a state-of-the-art "explain it to learn it" educational technology
 1.  **Learning & Knowledge Systems**: Core of the app. Concept-to-concept graph visualization, prerequisite mapping, flashcard generation, and active recall grading.
 2.  **Human Experience & Productivity**: Natural voice explanation capture, pre-session mood logs, and study streaks that incentivize consistent daily learning.
 3.  **Public Systems, Governance & Civic Tech**: Classroom mode as public infrastructure for teachers, designed specifically to bridge educational gaps across India's linguistic diversity.
-4.  **Trust, Identity & Security**: Strictly anonymized student IDs in classroom dashboards. Personal data/raw inputs never leave individual student nodes.
+4.  **Trust, Identity & Security**: Anonymized student aliases in teacher classroom dashboards. Leaderboard uses display names for peer motivation. Raw inputs are not stored in the graph.
 5.  **Media, Social & Interactive Platforms**: Interactive classroom leaderboards and peer masteries that use social motivation without conversational chat interfaces.
 6.  **Developer Tools & Software Infrastructure**: The entire background generation engine is exposed as a reusable API (`server/README.md`) that other edtech developers can build on.
 
@@ -112,3 +112,13 @@ Open the standalone webpage directly in any browser:
 Ready-to-paste prompts to generate full web interfaces instantly are provided inside the `docs/` directory:
 1.  **Student Personal Graph Explorer**: [base44-prompt-student.md](file:///c:/Users/pruthvi/Desktop/SIH%20Projects/StudyBuddy/docs/base44-prompt-student.md)
 2.  **Classroom Teacher Heatmap Dashboard**: [base44-prompt-teacher.md](file:///c:/Users/pruthvi/Desktop/SIH%20Projects/StudyBuddy/docs/base44-prompt-teacher.md)
+
+---
+
+## 🔒 Data Retention & Privacy Compliance
+StudyBuddy is designed with a strict stance on data minimization and privacy:
+- **Raw Audio Data**: Decoded base64 audio is processed entirely in-memory or written to a transient `.wav` file for the duration of the transcription API request. It is deleted unconditionally in the `finally` block immediately after, meaning raw audio files are never persisted on the server disk.
+- **Raw Transcripts**: Captured transcripts are processed by the LLM (Sarvam/Gemini) to extract key concepts, connections, and flashcards. Once extraction is complete, the raw transcripts are discarded and never written to the Neo4j database.
+- **Stored Data**: The only persisted learning records are the structural metadata (Topic names, prerequisite edges, cards, and daily streaks).
+- **Third-Party API Policies**: Since StudyBuddy leverages third-party models for processing (Sarvam AI for multilingual STT/chat, and Google Gemini for topic research and answer grading), prompts and audio uploads may be subject to the retention terms of Sarvam AI and Google Cloud APIs. All third-party endpoints are mapped with secure system API credentials and are never exposed to individual client devices.
+

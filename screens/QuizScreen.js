@@ -6,12 +6,14 @@ import {
   TouchableOpacity, 
   SafeAreaView, 
   Alert,
-  ScrollView
+  ScrollView,
+  TextInput,
+  ActivityIndicator
 } from 'react-native';
 import { Flame, Sparkles, Award, ArrowRight, RotateCcw, AlertTriangle } from 'lucide-react-native';
 
 import { getUser } from '../utils/storage';
-import { updateMastery } from '../utils/workflowClient';
+import { updateMasteryBatch, gradeAnswer } from '../utils/workflowClient';
 
 export default function QuizScreen({ route, navigation }) {
   const { deck } = route.params;
@@ -23,12 +25,40 @@ export default function QuizScreen({ route, navigation }) {
   const [sessionScores, setSessionScores] = useState({});
   const [quizCompleted, setQuizCompleted] = useState(false);
   
+  // Free text answer states
+  const [studentAnswer, setStudentAnswer] = useState('');
+  const [grading, setGrading] = useState(false);
+  const [llmFeedback, setLlmFeedback] = useState('');
+  const [llmScore, setLlmScore] = useState(null);
+
   // Track final summary stats
   const [correctCount, setCorrectCount] = useState(0);
 
   const getConceptName = (conceptId) => {
     const concept = concepts.find(c => c.id === conceptId);
     return concept ? concept.name : 'Topic';
+  };
+
+  const handleLlmGrade = async () => {
+    if (!studentAnswer.trim()) {
+      Alert.alert("Input Required", "Please type your answer before grading.");
+      return;
+    }
+    setGrading(true);
+    try {
+      const card = cards[currentIndex];
+      const result = await gradeAnswer(card.front, card.back, studentAnswer);
+      setLlmScore(result.score);
+      setLlmFeedback(result.feedback);
+      setRevealed(true);
+    } catch (e) {
+      console.warn("LLM grading error:", e);
+      Alert.alert("Grading Server Error", "Could not grade your response. Revealing answer for manual self-grade.", [
+        { text: "OK", onPress: () => setRevealed(true) }
+      ]);
+    } finally {
+      setGrading(false);
+    }
   };
 
   const handleReveal = () => {
@@ -40,22 +70,29 @@ export default function QuizScreen({ route, navigation }) {
     const concept = concepts.find(c => c.id === card.conceptId);
     const topicId = concept ? concept.canonicalTopic : card.conceptId;
 
-    // Track score locally for end-of-session submission
-    setSessionScores(prev => ({
-      ...prev,
-      [topicId]: scoreValue
-    }));
+    // Track score locally (averaged across topics later in finalize)
+    const nextScores = { ...sessionScores };
+    if (!nextScores[topicId]) {
+      nextScores[topicId] = [];
+    }
+    nextScores[topicId].push(scoreValue);
+    setSessionScores(nextScores);
 
     if (scoreValue >= 0.7) {
       setCorrectCount(prev => prev + 1);
     }
+
+    // Reset answer fields
+    setStudentAnswer('');
+    setLlmFeedback('');
+    setLlmScore(null);
 
     // Go to next card or complete
     if (currentIndex < cards.length - 1) {
       setRevealed(false);
       setCurrentIndex(prev => prev + 1);
     } else {
-      await finalizeQuizSession({ ...sessionScores, [topicId]: scoreValue });
+      await finalizeQuizSession(nextScores);
     }
   };
 
@@ -63,11 +100,14 @@ export default function QuizScreen({ route, navigation }) {
     try {
       const user = await getUser();
       
-      // Update mastery scores on the backend for each topic studied
-      for (const [topicId, score] of Object.entries(finalScores)) {
-        await updateMastery(user.id, topicId, score);
+      // Average score per unique topic studied
+      const updates = [];
+      for (const [topicId, scoresArray] of Object.entries(finalScores)) {
+        const avgScore = scoresArray.reduce((sum, val) => sum + val, 0) / scoresArray.length;
+        updates.push({ topicId, score: avgScore });
       }
-      
+
+      await updateMasteryBatch(user.id, updates);
       setQuizCompleted(true);
     } catch (err) {
       console.warn("Failed to update masteries on server:", err);
@@ -140,18 +180,49 @@ export default function QuizScreen({ route, navigation }) {
           </View>
 
           <ScrollView contentContainerStyle={styles.cardBodyScroll}>
-            {!revealed ? (
-              <View style={styles.cardContent}>
-                <Text style={styles.cardPromptText}>{currentCard?.front}</Text>
-              </View>
-            ) : (
-              <View style={styles.cardContent}>
-                <Text style={styles.cardPromptText}>{currentCard?.front}</Text>
-                <View style={styles.cardDivider} />
-                <Text style={styles.cardAnswerLabel}>ANSWER</Text>
-                <Text style={styles.cardAnswerText}>{currentCard?.back}</Text>
-              </View>
-            )}
+            <View style={styles.cardContent}>
+              <Text style={styles.cardPromptText}>{currentCard?.front}</Text>
+              
+              {!revealed && !grading && (
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>YOUR ANSWER:</Text>
+                  <TextInput
+                    style={styles.answerInput}
+                    placeholder="Type your explanation here to grade it..."
+                    placeholderTextColor="#546e7a"
+                    multiline
+                    numberOfLines={3}
+                    value={studentAnswer}
+                    onChangeText={setStudentAnswer}
+                  />
+                </View>
+              )}
+
+              {grading && (
+                <View style={styles.gradingLoader}>
+                  <ActivityIndicator size="small" color="#7c4dff" />
+                  <Text style={styles.gradingLoaderText}>Evaluating explanation with Gemini AI...</Text>
+                </View>
+              )}
+
+              {revealed && (
+                <View style={styles.revealSection}>
+                  <View style={styles.cardDivider} />
+                  <Text style={styles.cardAnswerLabel}>CORRECT ANSWER</Text>
+                  <Text style={styles.cardAnswerText}>{currentCard?.back}</Text>
+
+                  {llmScore !== null && (
+                    <View style={styles.llmFeedbackBox}>
+                      <View style={styles.feedbackHeader}>
+                        <Sparkles color="#00e5ff" size={16} style={{ marginRight: 6 }} />
+                        <Text style={styles.feedbackTitle}>Gemini Grading (Score: {llmScore})</Text>
+                      </View>
+                      <Text style={styles.feedbackText}>{llmFeedback}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
           </ScrollView>
         </View>
       </View>
@@ -159,31 +230,74 @@ export default function QuizScreen({ route, navigation }) {
       {/* ACTION PANEL */}
       <View style={styles.actionsPanel}>
         {!revealed ? (
-          <TouchableOpacity style={styles.revealButton} onPress={handleReveal}>
-            <Sparkles color="#ffffff" size={20} style={{ marginRight: 8 }} />
-            <Text style={styles.revealText}>Reveal Answer</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.gradingContainer}>
+          <View style={styles.preRevealActions}>
             <TouchableOpacity 
-              style={[styles.gradeButton, styles.gradeButtonAgain]}
-              onPress={() => handleScore(0.3)}
+              style={[styles.actionButton, styles.gradeLlmButton]} 
+              onPress={handleLlmGrade}
+              disabled={grading}
             >
-              <RotateCcw color="#ffffff" size={18} style={{ marginRight: 6 }} />
-              <Text style={styles.gradeText}>Review Again</Text>
+              <Sparkles color="#ffffff" size={20} style={{ marginRight: 8 }} />
+              <Text style={styles.actionButtonText}>Submit & Grade Answer</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={[styles.gradeButton, styles.gradeButtonMastered]}
-              onPress={() => handleScore(1.0)}
+              style={[styles.actionButton, styles.skipButton]} 
+              onPress={handleReveal}
+              disabled={grading}
             >
-              <Flame color="#ffffff" size={18} style={{ marginRight: 6 }} />
-              <Text style={styles.gradeText}>Mastered! ⚡</Text>
+              <Text style={styles.skipButtonText}>Skip Typing (Self-Assess)</Text>
             </TouchableOpacity>
+          </View>
+        ) : (
+          <View>
+            {llmScore !== null && (
+              <TouchableOpacity 
+                style={[styles.acceptLlmButton, { marginBottom: 12 }]}
+                onPress={() => handleScore(llmScore)}
+              >
+                <CheckIcon color="#ffffff" size={18} style={{ marginRight: 6 }} />
+                <Text style={styles.gradeText}>Accept AI Grade ({llmScore})</Text>
+              </TouchableOpacity>
+            )}
+
+            <View style={styles.gradingContainer}>
+              <TouchableOpacity 
+                style={[styles.gradeButton, styles.gradeButtonAgain]}
+                onPress={() => handleScore(0.3)}
+              >
+                <RotateCcw color="#ffffff" size={18} style={{ marginRight: 6 }} />
+                <Text style={styles.gradeText}>Incorrect (0.3)</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.gradeButton, styles.gradeButtonPartial]}
+                onPress={() => handleScore(0.6)}
+              >
+                <AlertTriangle color="#ffffff" size={18} style={{ marginRight: 6 }} />
+                <Text style={styles.gradeText}>Partial (0.6)</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.gradeButton, styles.gradeButtonMastered]}
+                onPress={() => handleScore(1.0)}
+              >
+                <Flame color="#ffffff" size={18} style={{ marginRight: 6 }} />
+                <Text style={styles.gradeText}>Mastered! (1.0)</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </View>
     </SafeAreaView>
+  );
+}
+
+// Simple Check Icon placeholder to replace lucide if missing, or use a custom node
+function CheckIcon({ color, size, style }) {
+  return (
+    <View style={[{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }, style]}>
+      <Text style={{ color, fontSize: 16, fontWeight: 'bold' }}>✓</Text>
+    </View>
   );
 }
 
@@ -225,7 +339,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#202945',
     borderRadius: 24,
-    minHeight: 280,
+    minHeight: 380,
     padding: 24,
     shadowColor: '#7c4dff',
     shadowOffset: { width: 0, height: 6 },
@@ -260,6 +374,47 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 26,
     textAlign: 'center',
+    marginBottom: 16,
+  },
+  inputContainer: {
+    marginTop: 10,
+    width: '100%',
+  },
+  inputLabel: {
+    color: '#90a4ae',
+    fontSize: 10,
+    fontWeight: '700',
+    marginBottom: 6,
+    letterSpacing: 0.5,
+  },
+  answerInput: {
+    backgroundColor: '#07080f',
+    borderColor: '#202945',
+    borderWidth: 1,
+    borderRadius: 12,
+    color: '#ffffff',
+    padding: 12,
+    fontSize: 14,
+    height: 80,
+    textAlignVertical: 'top',
+  },
+  gradingLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    backgroundColor: '#16142c',
+    borderRadius: 14,
+    marginTop: 16,
+  },
+  gradingLoaderText: {
+    color: '#7c4dff',
+    marginLeft: 8,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  revealSection: {
+    width: '100%',
   },
   cardDivider: {
     height: 1,
@@ -280,24 +435,71 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlign: 'center',
   },
+  llmFeedbackBox: {
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 18,
+  },
+  feedbackHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  feedbackTitle: {
+    color: '#00e5ff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  feedbackText: {
+    color: '#d1d5db',
+    fontSize: 13,
+    lineHeight: 18,
+  },
   actionsPanel: {
     padding: 20,
     backgroundColor: 'rgba(7, 8, 15, 0.95)',
     borderTopWidth: 1,
     borderTopColor: '#202945',
   },
-  revealButton: {
-    backgroundColor: '#7c4dff',
+  preRevealActions: {
+    width: '100%',
+  },
+  actionButton: {
     borderRadius: 16,
-    paddingVertical: 16,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
+    marginBottom: 10,
   },
-  revealText: {
+  gradeLlmButton: {
+    backgroundColor: '#7c4dff',
+  },
+  skipButton: {
+    backgroundColor: '#1b223c',
+    borderWidth: 1,
+    borderColor: '#2d375e',
+  },
+  actionButtonText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
+  },
+  skipButtonText: {
+    color: '#90a4ae',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  acceptLlmButton: {
+    backgroundColor: '#0284c7',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   gradingContainer: {
     flexDirection: 'row',
@@ -305,25 +507,29 @@ const styles = StyleSheet.create({
   },
   gradeButton: {
     flex: 1,
-    borderRadius: 16,
-    paddingVertical: 16,
-    flexDirection: 'row',
+    borderRadius: 12,
+    paddingVertical: 12,
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 6,
+    marginHorizontal: 4,
   },
   gradeButtonAgain: {
     backgroundColor: '#37474f',
     borderWidth: 1,
     borderColor: '#455a64',
   },
+  gradeButtonPartial: {
+    backgroundColor: '#d97706',
+  },
   gradeButtonMastered: {
-    backgroundColor: '#4caf50',
+    backgroundColor: '#16a34a',
   },
   gradeText: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
+    marginTop: 4,
   },
   containerCompleted: {
     flex: 1,

@@ -34,7 +34,7 @@ Build a responsive student study dashboard with a dark mode theme matching the f
      - Render a clean table or card list showing the output of Endpoint B.
      - Each item displays: Concept Name, Current Mastery %, and Last Reviewed Timestamp (formatted as relative time).
      - Include a small warning icon next to concepts with mastery < 40%.
-     - Add a "Revise Now" button on each card which pops up a simple overlay showing a simulated flashcard question.
+     - Add a "Revise Now" button on each card which displays a direct link or modal instructing the student to open the mobile application to begin the active recall quiz for this topic.
 
 4. STYLE & THEME (Premium Aesthetics):
    - Background Color: #07080f

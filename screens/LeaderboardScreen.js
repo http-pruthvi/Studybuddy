@@ -102,7 +102,7 @@ export default function LeaderboardScreen({ route }) {
         
         <View style={styles.bannerInfoRow}>
           <ShieldCheck color="#4caf50" size={12} style={{ marginRight: 6 }} />
-          <Text style={styles.anonymityNotice}>Security: Student identities anonymized on external dashboards</Text>
+          <Text style={styles.anonymityNotice}>Leaderboard shows display names for peer motivation — teacher heatmap uses anonymized aliases</Text>
         </View>
 
         <TouchableOpacity style={styles.shareButton} onPress={handleShareCode}>

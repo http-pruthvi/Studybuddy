@@ -80,6 +80,15 @@ class GenerateDeckRequest(BaseModel):
     userId: str = Field(..., description="Unique client-generated user identifier")
     userName: Optional[str] = Field("Guest Student", description="User's screen name")
     classroomId: Optional[str] = Field(None, description="Optional class ID user is a member of")
+    commit: Optional[bool] = Field(True, description="Whether to write directly to database immediately.")
+
+class CommitDeckRequest(BaseModel):
+    userId: str = Field(..., description="Unique user identifier")
+    userName: str = Field(..., description="User's screen name")
+    deckTitle: str = Field(..., description="The title of the generated study deck")
+    concepts: list[dict] = Field(..., description="Extracted concept nodes")
+    cards: list[dict] = Field(..., description="Extracted flashcards")
+    classroomId: Optional[str] = Field(None, description="Optional classroom ID")
 
 class MasteryUpdateRequest(BaseModel):
     topicId: str = Field(..., description="ID or canonical name of the topic")
@@ -145,7 +154,8 @@ async def generate_deck(payload: GenerateDeckRequest, authed_user_id: str = Depe
             text=payload.text,
             audio_base64=payload.audioBase64,
             language_code=payload.languageCode,
-            classroom_id=payload.classroomId
+            classroom_id=payload.classroomId,
+            commit=payload.commit
         )
         return result
     except Exception as e:
@@ -154,6 +164,33 @@ async def generate_deck(payload: GenerateDeckRequest, authed_user_id: str = Depe
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Workflow execution failed: {str(e)}"
+        )
+
+@app.post("/decks/commit", status_code=status.HTTP_201_CREATED)
+async def commit_deck(payload: CommitDeckRequest, authed_user_id: str = Depends(verify_user_token)):
+    """
+    Saves an extracted concept map/flashcard deck directly to the Neo4j database.
+    Used when confirmation is deferred (e.g. after verifying clarityScore and gaps).
+    """
+    if payload.userId != authed_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to act on behalf of this user namespace"
+        )
+    try:
+        db_result = write_deck_and_graph(
+            user_id=payload.userId,
+            user_name=payload.userName,
+            deck_title=payload.deckTitle,
+            concepts=payload.concepts,
+            cards=payload.cards,
+            classroom_id=payload.classroomId
+        )
+        return db_result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to commit deck to database: {str(e)}"
         )
 
 @app.post("/topics/learn", status_code=status.HTTP_201_CREATED)
